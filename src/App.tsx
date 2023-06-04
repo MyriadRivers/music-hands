@@ -93,6 +93,11 @@ function App() {
 
     let lastVideoTime = -1;
     let results: HandLandmarkerResult;
+
+    const osc = new Tone.Oscillator().toDestination();
+    osc.frequency.value = "C4";
+    let oscStarted = false;
+
     async function predictWebcam() {
       
       let startTimeMs = performance.now();
@@ -103,20 +108,28 @@ function App() {
           
           // Test continuous sonification
           if (results.handednesses.length > 0) {
+            if (!oscStarted) {
+              osc.start();
+              oscStarted = true;
+            }
             if (results.handednesses[0][0].categoryName === "Right") {
               setHasRight(true);
-            } else {
-              setHasRight(false);
+              console.log("right!")
+              osc.frequency.rampTo("C5", 1);
             }
             if (results.handednesses[0][0].categoryName === "Left") {
               setHasLeft(true);
-            } else {
-              setHasLeft(false);
+              console.log("left!")
+              osc.frequency.rampTo("G5", 1);
             }
           } else {
+            console.log("wipe!")
+            osc.stop();
+            oscStarted = false;
             setHasRight(false);
             setHasLeft(false);
           }
+
         }
         canvas.current.width = video.current.videoWidth;
         canvas.current.height = video.current.videoHeight;
@@ -156,11 +169,33 @@ function App() {
   //   }
   // }
 
-  const startSound = () => {
-    const synth = new Tone.Synth().toDestination();
-    if (hasRight) synth.triggerAttackRelease("C4", "8n");
-    if (hasLeft) synth.triggerAttackRelease("G4", "8n");
-  }
+  // const startSound = () => {
+  //   const osc = new Tone.Oscillator().toDestination();
+  //   let oscStarted = false;
+
+  //   const sonify = async () => {
+  //     console.log("right: " + hasRight + " left: " + hasLeft);
+  //     if (hasRight) {
+  //       osc.frequency.rampTo("C4", 1);
+  //     } else if (hasLeft) {
+  //       osc.frequency.rampTo("G4", 1);
+  //     }
+  //     if (hasRight || hasLeft) {
+  //       if (!oscStarted) {
+  //         //osc.start();
+  //         oscStarted = true;
+  //       }
+  //     } else {
+  //       //osc.stop();
+  //       oscStarted = false;
+  //     }
+
+  //     // window.requestAnimationFrame(sonify);
+  //     window.requestAnimationFrame(sonify);
+  //   }
+
+  //   sonify();
+  // }
 
   return (
     <div className="App">
@@ -174,7 +209,7 @@ function App() {
       <br/>
       <br/>
       <br/>
-      <button onClick={startSound} >catch these hands</button>
+      <button onClick={() => {console.log("click!")}} >catch these hands</button>
     </div>
   );
 }
