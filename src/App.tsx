@@ -15,6 +15,8 @@ import {
   HAND_CONNECTIONS
 } from '@mediapipe/hands'
 
+import { Vector, getAngle, radToDeg } from './utils';
+
 function App() {
   const landmarker = useRef<HandLandmarker | null>(null);
   const video = useRef<HTMLVideoElement>(null);
@@ -59,12 +61,33 @@ function App() {
   const sonify = (results: HandLandmarkerResult) => {
     if (osc.current && gain.current) {
 
+      // Only make sounds if hands are detected
+
       if (results.handednesses.length > 0) {
         gain.current.gain.rampTo(1.0);
-        if (results.handednesses[0][0].categoryName === "Right") {
-          osc.current.frequency.rampTo("C5", 0);
-        } else if (results.handednesses[0][0].categoryName === "Left") {
-          osc.current.frequency.rampTo("C4", 0);
+        // HANDEDNESS TEST
+
+        // if (results.handednesses[0][0].categoryName === "Right") {
+        //   osc.current.frequency.rampTo("C5", 0);
+        // } else if (results.handednesses[0][0].categoryName === "Left") {
+        //   osc.current.frequency.rampTo("C4", 0);
+        // }
+
+        // ANGLES TEST
+
+        // Get the landmarks for the first hand detected, marks 5 - 9 (index finger)
+        let index = results.landmarks[0].slice(5, 9);
+        let k1 = new Vector(index[0].x, index[0].y, index[0].z);
+        let k2 = new Vector(index[1].x, index[1].y, index[1].z);
+        let k3 = new Vector(index[2].x, index[2].y, index[2].z);
+
+        let angle = radToDeg(getAngle(k1, k2, k3));
+        console.log(angle);
+
+        if (angle > 135) {
+          osc.current.frequency.rampTo("E5", 0);
+        } else if (angle <= 135) {
+          osc.current.frequency.rampTo("E4", 0);
         }
 
       } else {
