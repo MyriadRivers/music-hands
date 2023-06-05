@@ -3,7 +3,8 @@ import { useRef, useEffect } from 'react';
 import {
   HandLandmarker,
   FilesetResolver,
-  HandLandmarkerResult
+  HandLandmarkerResult,
+  NormalizedLandmark
 } from '@mediapipe/tasks-vision'
 
 import {
@@ -15,7 +16,50 @@ import {
   HAND_CONNECTIONS
 } from '@mediapipe/hands'
 
-import { Vector, getAngle, radToDeg } from './utils';
+import { getAngle, clamp, radToDeg } from './utils';
+
+type Extensions = {
+  thumb: number;
+  index: number;
+  middle: number;
+  ring: number;
+  pinky: number;
+}
+
+function getExtensions(handmarks: NormalizedLandmark[]): Extensions {
+  let angleThumbMCP = radToDeg(getAngle(handmarks[1], handmarks[2], handmarks[3]));
+  let angleThumbIP = radToDeg(getAngle(handmarks[2], handmarks[3], handmarks[4]));
+
+  let angleIndexMCP = radToDeg(getAngle(handmarks[0], handmarks[5], handmarks[6]));
+  let angleIndexPIP = radToDeg(getAngle(handmarks[5], handmarks[6], handmarks[7]));
+  let angleIndexDIP = radToDeg(getAngle(handmarks[6], handmarks[7], handmarks[8]));
+
+  let angleMiddleMCP = radToDeg(getAngle(handmarks[0], handmarks[9], handmarks[10]));
+  let angleMiddlePIP = radToDeg(getAngle(handmarks[9], handmarks[10], handmarks[11]));
+  let angleMiddleDIP = radToDeg(getAngle(handmarks[10], handmarks[11], handmarks[12]));
+
+  let angleRingMCP = radToDeg(getAngle(handmarks[0], handmarks[13], handmarks[14]));
+  let angleRingPIP = radToDeg(getAngle(handmarks[13], handmarks[14], handmarks[15]));
+  let angleRingDIP = radToDeg(getAngle(handmarks[14], handmarks[15], handmarks[16]));
+
+  let anglePinkyMCP = radToDeg(getAngle(handmarks[0], handmarks[17], handmarks[18]));
+  let anglePinkyPIP = radToDeg(getAngle(handmarks[17], handmarks[18], handmarks[19]));
+  let anglePinkyDIP = radToDeg(getAngle(handmarks[18], handmarks[19], handmarks[20]));
+
+  let thumb = clamp((angleThumbMCP + angleThumbIP) / (180 * 2), 0, 1);
+  let index = clamp((angleIndexMCP + angleIndexPIP + angleIndexDIP) / (180 * 3), 0, 1);
+  let middle = clamp((angleMiddleMCP + angleMiddlePIP + angleMiddleDIP) / (180 * 3), 0, 1);
+  let ring = clamp((angleRingMCP + angleRingPIP + angleRingDIP) / (180 * 3), 0, 1);
+  let pinky = clamp((anglePinkyMCP + anglePinkyPIP + anglePinkyDIP) / (180 * 3), 0, 1);
+
+  return {
+    thumb: thumb,
+    index: index,
+    middle: middle,
+    ring: ring,
+    pinky: pinky
+  }
+}
 
 function App() {
   const landmarker = useRef<HandLandmarker | null>(null);
@@ -73,22 +117,12 @@ function App() {
         //   osc.current.frequency.rampTo("C4", 0);
         // }
 
-        // ANGLES TEST
+        // Extensions Test
 
-        // Get the landmarks for the first hand detected, marks 5 - 9 (index finger)
-        let index = results.landmarks[0].slice(5, 9);
-        let k1 = new Vector(index[0].x, index[0].y, index[0].z);
-        let k2 = new Vector(index[1].x, index[1].y, index[1].z);
-        let k3 = new Vector(index[2].x, index[2].y, index[2].z);
+        let firstExtensions = getExtensions(results.landmarks[0])
 
-        let angle = radToDeg(getAngle(k1, k2, k3));
-        console.log(angle);
-
-        if (angle > 135) {
-          osc.current.frequency.rampTo("E5", 0);
-        } else if (angle <= 135) {
-          osc.current.frequency.rampTo("E4", 0);
-        }
+        console.log(firstExtensions);
+        osc.current.frequency.rampTo(800 * firstExtensions.index, 0);
 
       } else {
         gain.current.gain.rampTo(0.0);
@@ -151,10 +185,10 @@ function App() {
           if (results.landmarks) {
             for (const landmarks of results.landmarks) {
               drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {
-                color: "#00FF00",
+                color: "#86cecb",
                 lineWidth: 5
               });
-              drawLandmarks(canvasCtx, landmarks, { color: "#FF0000", lineWidth: 2 });
+              drawLandmarks(canvasCtx, landmarks, { color: "#d12f4e", lineWidth: 2 });
             }
           }
           canvasCtx.restore();
@@ -171,13 +205,6 @@ function App() {
         <video id="video" ref={video} style={{position: "absolute"}}></video>
         <canvas id="output_canvas" ref={canvas} style={{position: "absolute", left: "0px", top: "0px"}}></canvas>
       </div>
-      <br/>
-      <br/>
-      <br/>
-      <br/>
-      <br/>
-      <br/>
-      <button onClick={() => {console.log("click!")}} >catch these hands</button>
     </div>
   );
 }
