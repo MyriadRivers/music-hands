@@ -66,7 +66,18 @@ function App() {
   const video = useRef<HTMLVideoElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
 
-  const osc = useRef<Tone.Oscillator | null>(null);
+  const oscT = useRef<Tone.Oscillator | null>(null);
+  const oscI = useRef<Tone.Oscillator | null>(null);
+  const oscM = useRef<Tone.Oscillator | null>(null);
+  const oscR = useRef<Tone.Oscillator | null>(null);
+  const oscP = useRef<Tone.Oscillator | null>(null);
+
+  const filterT = useRef<Tone.Filter | null>(null);
+  const filterI = useRef<Tone.Filter | null>(null);
+  const filterM = useRef<Tone.Filter | null>(null);
+  const filterR = useRef<Tone.Filter | null>(null);
+  const filterP = useRef<Tone.Filter | null>(null);
+
   const gain = useRef<Tone.Gain | null>(null);
 
   useEffect(() => {
@@ -93,17 +104,51 @@ function App() {
   }
 
   const initSound = () => {
-    osc.current = new Tone.Oscillator();
+    oscT.current = new Tone.Oscillator("C4");
+    oscI.current = new Tone.Oscillator("E4");
+    oscM.current = new Tone.Oscillator("G4");
+    oscR.current = new Tone.Oscillator("A#4");
+    oscP.current = new Tone.Oscillator("D5");
+
+    oscT.current.volume.value = -24;
+    oscI.current.volume.value = -24;
+    oscM.current.volume.value = -24;
+    oscR.current.volume.value = -24;
+    oscP.current.volume.value = -24;
+
+    filterT.current = new Tone.Filter(0, "lowpass");
+    filterI.current = new Tone.Filter(0, "lowpass");
+    filterM.current = new Tone.Filter(0, "lowpass");
+    filterR.current = new Tone.Filter(0, "lowpass");
+    filterP.current = new Tone.Filter(0, "lowpass");
+
+    oscT.current.connect(filterT.current);
+    oscI.current.connect(filterI.current);
+    oscM.current.connect(filterM.current);
+    oscR.current.connect(filterR.current);
+    oscP.current.connect(filterP.current);
+
     gain.current = new Tone.Gain(0);
 
-    osc.current.connect(gain.current);
+    filterT.current.connect(gain.current);
+    filterI.current.connect(gain.current);
+    filterM.current.connect(gain.current);
+    filterR.current.connect(gain.current);
+    filterP.current.connect(gain.current);
 
     gain.current.toDestination();
-    osc.current.start();
+    
+    oscT.current.start();
+    oscI.current.start();
+    oscM.current.start();
+    oscR.current.start();
+    oscP.current.start();
   }
 
   const sonify = (results: HandLandmarkerResult) => {
-    if (osc.current && gain.current) {
+    if (oscT.current && oscI.current && oscM.current && oscR.current && oscP.current && 
+      filterT.current && filterI.current && filterM.current && filterR.current && filterP.current && 
+      gain.current) {
 
       // Only make sounds if hands are detected
 
@@ -122,7 +167,22 @@ function App() {
         let firstExtensions = getExtensions(results.landmarks[0])
 
         console.log(firstExtensions);
-        osc.current.frequency.rampTo(800 * firstExtensions.index, 0);
+        filterT.current.frequency.rampTo(2000 * firstExtensions.thumb, 0);
+        filterI.current.frequency.rampTo(2000 * firstExtensions.index, 0);
+        filterM.current.frequency.rampTo(2000 * firstExtensions.middle, 0);
+        filterR.current.frequency.rampTo(2000 * firstExtensions.ring, 0);
+        filterP.current.frequency.rampTo(2000 * firstExtensions.pinky, 0);
+
+        oscT.current.frequency.rampTo(1400 * firstExtensions.thumb, 0);
+        oscI.current.frequency.rampTo(1200 * firstExtensions.index, 0);
+        oscM.current.frequency.rampTo(1000 * firstExtensions.middle, 0);
+        oscR.current.frequency.rampTo(800 * firstExtensions.ring, 0);
+        oscP.current.frequency.rampTo(600 * firstExtensions.pinky, 0);
+
+        //TODO: Have some variables store the minimum and maximum extension perceived for each finger
+        // Move my hand in all ways possible
+        // Then clamp the extensions and scale them to those min and max, normalizing values to 0 and 1
+        // to make them easier to deal with
 
       } else {
         gain.current.gain.rampTo(0.0);
