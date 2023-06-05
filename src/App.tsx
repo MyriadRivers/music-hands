@@ -1,5 +1,5 @@
 import * as Tone from 'tone';
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useEffect } from 'react';
 import {
   HandLandmarker,
   FilesetResolver,
@@ -20,23 +20,17 @@ function App() {
   const video = useRef<HTMLVideoElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
 
-  const [activeHands, setActiveHands] = useState<HandLandmarkerResult>();
-  const [hasRight, setHasRight] = useState(false);
-  const [hasLeft, setHasLeft] = useState(false);
+  const osc = useRef<Tone.Oscillator | null>(null);
+  const gain = useRef<Tone.Gain | null>(null);
 
   useEffect(() => {
     async function initialize() {
       await createLandmarker()
       await startWebCam();
+      initSound();
     }
     initialize();
   }, []);
-
-  // const makeSound = (handedness) => {
-  //   const synth = new Tone.Synth().toDestination();
-  //   const note = handedness === "Right" ? "C4" : "G4";
-  //   synth.triggerAttackRelease(note, "8n");
-  // }
   
   const createLandmarker = async () => {
     const vision = await FilesetResolver.forVisionTasks(
@@ -51,16 +45,33 @@ function App() {
       numHands: 2
     });
   }
-  
-  // const catchHands = async () => {
-  //   if (video.current && detector.current) {
-  //     const hands = await detector.current.estimateHands(video.current);
-  //     console.log(hands);
-  //     // Play a different note depending on whether it's a right or a left hand
-  //     makeSound(hands[0].handedness)
-  //     return hands;
-  //   }
-  // }
+
+  const initSound = () => {
+    osc.current = new Tone.Oscillator();
+    gain.current = new Tone.Gain(0);
+
+    osc.current.connect(gain.current);
+
+    gain.current.toDestination();
+    osc.current.start();
+  }
+
+  const sonify = (results: HandLandmarkerResult) => {
+    if (osc.current && gain.current) {
+
+      if (results.handednesses.length > 0) {
+        gain.current.gain.rampTo(1.0);
+        if (results.handednesses[0][0].categoryName === "Right") {
+          osc.current.frequency.rampTo("C5", 0);
+        } else if (results.handednesses[0][0].categoryName === "Left") {
+          osc.current.frequency.rampTo("C4", 0);
+        }
+
+      } else {
+        gain.current.gain.rampTo(0.0);
+      }
+    }
+  }
   
   const startWebCam = async () => {
     // Check if webcam access is supported.
@@ -94,10 +105,6 @@ function App() {
     let lastVideoTime = -1;
     let results: HandLandmarkerResult;
 
-    const osc = new Tone.Oscillator().toDestination();
-    osc.frequency.value = "C4";
-    let oscStarted = false;
-
     async function predictWebcam() {
       
       let startTimeMs = performance.now();
@@ -106,29 +113,7 @@ function App() {
           lastVideoTime = video.current.currentTime;
           results = landmarker.current.detectForVideo(video.current, startTimeMs)
           
-          // Test continuous sonification
-          if (results.handednesses.length > 0) {
-            if (!oscStarted) {
-              osc.start();
-              oscStarted = true;
-            }
-            if (results.handednesses[0][0].categoryName === "Right") {
-              setHasRight(true);
-              console.log("right!")
-              osc.frequency.rampTo("C5", 1);
-            }
-            if (results.handednesses[0][0].categoryName === "Left") {
-              setHasLeft(true);
-              console.log("left!")
-              osc.frequency.rampTo("G5", 1);
-            }
-          } else {
-            console.log("wipe!")
-            osc.stop();
-            oscStarted = false;
-            setHasRight(false);
-            setHasLeft(false);
-          }
+          sonify(results);
 
         }
         canvas.current.width = video.current.videoWidth;
@@ -156,46 +141,6 @@ function App() {
       window.requestAnimationFrame(predictWebcam);
     }
   }
-
-  // const trackHands = async () => {
-  //   if (video.current && activeHands) {
-  //     if (activeHands.handednesses.length >= 1) {
-  //       let hasRight = false;
-  //       let hasLeft = false;
-  //       activeHands.handednesses.forEach(hand => {
-  //         hasRight = hand[0].categoryName === "Right";
-  //       });
-  //     }
-  //   }
-  // }
-
-  // const startSound = () => {
-  //   const osc = new Tone.Oscillator().toDestination();
-  //   let oscStarted = false;
-
-  //   const sonify = async () => {
-  //     console.log("right: " + hasRight + " left: " + hasLeft);
-  //     if (hasRight) {
-  //       osc.frequency.rampTo("C4", 1);
-  //     } else if (hasLeft) {
-  //       osc.frequency.rampTo("G4", 1);
-  //     }
-  //     if (hasRight || hasLeft) {
-  //       if (!oscStarted) {
-  //         //osc.start();
-  //         oscStarted = true;
-  //       }
-  //     } else {
-  //       //osc.stop();
-  //       oscStarted = false;
-  //     }
-
-  //     // window.requestAnimationFrame(sonify);
-  //     window.requestAnimationFrame(sonify);
-  //   }
-
-  //   sonify();
-  // }
 
   return (
     <div className="App">
