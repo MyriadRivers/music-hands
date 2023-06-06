@@ -1,5 +1,5 @@
 import * as Tone from 'tone';
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import {
   HandLandmarker,
   FilesetResolver,
@@ -80,11 +80,25 @@ function App() {
 
   const gain = useRef<Tone.Gain | null>(null);
 
+  const [minT, setMinT] = useState(-100);
+  const [minI, setMinI] = useState(-100);
+  const [minM, setMinM] = useState(-100);
+  const [minR, setMinR] = useState(-100);
+  const [minP, setMinP] = useState(-100);
+  
+  const [maxT, setMaxT] = useState(100);
+  const [maxI, setMaxI] = useState(100);
+  const [maxM, setMaxM] = useState(100);
+  const [maxR, setMaxR] = useState(100);
+  const [maxP, setMaxP] = useState(100);
+
+
   useEffect(() => {
     async function initialize() {
       await createLandmarker()
       await startWebCam();
       initSound();
+
     }
     initialize();
   }, []);
@@ -144,51 +158,6 @@ function App() {
     oscR.current.start();
     oscP.current.start();
   }
-
-  const sonify = (results: HandLandmarkerResult) => {
-    if (oscT.current && oscI.current && oscM.current && oscR.current && oscP.current && 
-      filterT.current && filterI.current && filterM.current && filterR.current && filterP.current && 
-      gain.current) {
-
-      // Only make sounds if hands are detected
-
-      if (results.handednesses.length > 0) {
-        gain.current.gain.rampTo(1.0);
-        // HANDEDNESS TEST
-
-        // if (results.handednesses[0][0].categoryName === "Right") {
-        //   osc.current.frequency.rampTo("C5", 0);
-        // } else if (results.handednesses[0][0].categoryName === "Left") {
-        //   osc.current.frequency.rampTo("C4", 0);
-        // }
-
-        // Extensions Test
-
-        let firstExtensions = getExtensions(results.landmarks[0])
-
-        console.log(firstExtensions);
-        filterT.current.frequency.rampTo(2000 * firstExtensions.thumb, 0);
-        filterI.current.frequency.rampTo(2000 * firstExtensions.index, 0);
-        filterM.current.frequency.rampTo(2000 * firstExtensions.middle, 0);
-        filterR.current.frequency.rampTo(2000 * firstExtensions.ring, 0);
-        filterP.current.frequency.rampTo(2000 * firstExtensions.pinky, 0);
-
-        oscT.current.frequency.rampTo(1400 * firstExtensions.thumb, 0);
-        oscI.current.frequency.rampTo(1200 * firstExtensions.index, 0);
-        oscM.current.frequency.rampTo(1000 * firstExtensions.middle, 0);
-        oscR.current.frequency.rampTo(800 * firstExtensions.ring, 0);
-        oscP.current.frequency.rampTo(600 * firstExtensions.pinky, 0);
-
-        //TODO: Have some variables store the minimum and maximum extension perceived for each finger
-        // Move my hand in all ways possible
-        // Then clamp the extensions and scale them to those min and max, normalizing values to 0 and 1
-        // to make them easier to deal with
-
-      } else {
-        gain.current.gain.rampTo(0.0);
-      }
-    }
-  }
   
   const startWebCam = async () => {
     // Check if webcam access is supported.
@@ -222,6 +191,18 @@ function App() {
     let lastVideoTime = -1;
     let results: HandLandmarkerResult;
 
+    let minT = 100;
+    let minI = 100;
+    let minM = 100;
+    let minR = 100;
+    let minP = 100;
+
+    let maxT = -100;
+    let maxI = -100;
+    let maxM = -100;
+    let maxR = -100;
+    let maxP = -100;
+
     async function predictWebcam() {
       
       let startTimeMs = performance.now();
@@ -229,7 +210,69 @@ function App() {
         if (lastVideoTime !== video.current.currentTime) {
           lastVideoTime = video.current.currentTime;
           results = landmarker.current.detectForVideo(video.current, startTimeMs)
-          
+
+          const sonify = (results: HandLandmarkerResult) => {
+            if (oscT.current && oscI.current && oscM.current && oscR.current && oscP.current && 
+              filterT.current && filterI.current && filterM.current && filterR.current && filterP.current && 
+              gain.current) {
+        
+              // Only make sounds if hands are detected
+        
+              if (results.handednesses.length > 0) {
+                gain.current.gain.rampTo(1.0);
+                // HANDEDNESS TEST
+        
+                // if (results.handednesses[0][0].categoryName === "Right") {
+                //   osc.current.frequency.rampTo("C5", 0);
+                // } else if (results.handednesses[0][0].categoryName === "Left") {
+                //   osc.current.frequency.rampTo("C4", 0);
+                // }
+        
+                // Extensions Test
+        
+                let ext = getExtensions(results.landmarks[0])
+        
+                filterT.current.frequency.rampTo(2000 * ext.thumb, 0);
+                filterI.current.frequency.rampTo(2000 * ext.index, 0);
+                filterM.current.frequency.rampTo(2000 * ext.middle, 0);
+                filterR.current.frequency.rampTo(2000 * ext.ring, 0);
+                filterP.current.frequency.rampTo(2000 * ext.pinky, 0);
+        
+                oscT.current.frequency.rampTo(1400 * ext.thumb, 0);
+                oscI.current.frequency.rampTo(1200 * ext.index, 0);
+                oscM.current.frequency.rampTo(1000 * ext.middle, 0);
+                oscR.current.frequency.rampTo(800 * ext.ring, 0);
+                oscP.current.frequency.rampTo(600 * ext.pinky, 0);
+        
+                
+                minT = Math.min(ext.thumb, minT);
+                minI = Math.min(ext.index, minI);
+                minM = Math.min(ext.middle, minM);
+                minR = Math.min(ext.ring, minR);
+                minP = Math.min(ext.pinky, minP);
+        
+                maxT = Math.max(ext.thumb, maxT);
+                maxI = Math.max(ext.index, maxI);
+                maxM = Math.max(ext.middle, maxM);
+                maxR = Math.max(ext.ring, maxR);
+                maxP = Math.max(ext.pinky, maxP);
+        
+                console.log(`minT: ${minT}\nminI: ${minI}\nminM: ${minM}\nminR: ${minR}\nminP: ${minP}\n`);
+                console.log(`maxT: ${maxT}\nmaxI: ${maxI}\nmaxM: ${maxM}\nmaxR: ${maxR}\nmaxP: ${maxP}\n`);
+        
+        
+        
+                //TODO: Have some variables store the minimum and maximum extension perceived for each finger
+                // Move my hand in all ways possible
+                // Then clamp the extensions and scale them to those min and max, normalizing values to 0 and 1
+                // to make them easier to deal with
+        
+              } else {
+                gain.current.gain.rampTo(0.0);
+              }
+            }
+          }
+
           sonify(results);
 
         }
