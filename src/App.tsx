@@ -1,5 +1,5 @@
 import * as Tone from 'tone';
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect } from 'react';
 import {
   HandLandmarker,
   FilesetResolver,
@@ -16,7 +16,7 @@ import {
   HAND_CONNECTIONS
 } from '@mediapipe/hands'
 
-import { getAngle, clamp, radToDeg } from './utils';
+import { getAngle, scale, radToDeg } from './utils';
 
 type Extensions = {
   thumb: number;
@@ -46,11 +46,13 @@ function getExtensions(handmarks: NormalizedLandmark[]): Extensions {
   let anglePinkyPIP = radToDeg(getAngle(handmarks[17], handmarks[18], handmarks[19]));
   let anglePinkyDIP = radToDeg(getAngle(handmarks[18], handmarks[19], handmarks[20]));
 
-  let thumb = clamp((angleThumbMCP + angleThumbIP) / (180 * 2), 0, 1);
-  let index = clamp((angleIndexMCP + angleIndexPIP + angleIndexDIP) / (180 * 3), 0, 1);
-  let middle = clamp((angleMiddleMCP + angleMiddlePIP + angleMiddleDIP) / (180 * 3), 0, 1);
-  let ring = clamp((angleRingMCP + angleRingPIP + angleRingDIP) / (180 * 3), 0, 1);
-  let pinky = clamp((anglePinkyMCP + anglePinkyPIP + anglePinkyDIP) / (180 * 3), 0, 1);
+  // TODO: Replace scale min and max with detected min and max extension from user
+  // Right now they use hard coded values aligned with my own testing
+  let thumb = scale((angleThumbMCP + angleThumbIP) / (180 * 2), 0.65, 0.965, true);
+  let index = scale((angleIndexMCP + angleIndexPIP + angleIndexDIP) / (180 * 3), 0.64, 0.975, true);
+  let middle = scale((angleMiddleMCP + angleMiddlePIP + angleMiddleDIP) / (180 * 3), 0.55, 0.975, true);
+  let ring = scale((angleRingMCP + angleRingPIP + angleRingDIP) / (180 * 3), 0.52, 0.975, true);
+  let pinky = scale((anglePinkyMCP + anglePinkyPIP + anglePinkyDIP) / (180 * 3), 0.50, 0.975, true);
 
   return {
     thumb: thumb,
@@ -79,19 +81,6 @@ function App() {
   const filterP = useRef<Tone.Filter | null>(null);
 
   const gain = useRef<Tone.Gain | null>(null);
-
-  const [minT, setMinT] = useState(-100);
-  const [minI, setMinI] = useState(-100);
-  const [minM, setMinM] = useState(-100);
-  const [minR, setMinR] = useState(-100);
-  const [minP, setMinP] = useState(-100);
-  
-  const [maxT, setMaxT] = useState(100);
-  const [maxI, setMaxI] = useState(100);
-  const [maxM, setMaxM] = useState(100);
-  const [maxR, setMaxR] = useState(100);
-  const [maxP, setMaxP] = useState(100);
-
 
   useEffect(() => {
     async function initialize() {
@@ -191,17 +180,17 @@ function App() {
     let lastVideoTime = -1;
     let results: HandLandmarkerResult;
 
-    let minT = 100;
-    let minI = 100;
-    let minM = 100;
-    let minR = 100;
-    let minP = 100;
+    let minT = 0.7;
+    let minI = 0.7;
+    let minM = 0.7;
+    let minR = 0.7;
+    let minP = 0.7;
 
-    let maxT = -100;
-    let maxI = -100;
-    let maxM = -100;
-    let maxR = -100;
-    let maxP = -100;
+    let maxT = 0.7;
+    let maxI = 0.7;
+    let maxM = 0.7;
+    let maxR = 0.7;
+    let maxP = 0.7;
 
     async function predictWebcam() {
       
@@ -232,17 +221,17 @@ function App() {
         
                 let ext = getExtensions(results.landmarks[0])
         
-                filterT.current.frequency.rampTo(2000 * ext.thumb, 0);
-                filterI.current.frequency.rampTo(2000 * ext.index, 0);
-                filterM.current.frequency.rampTo(2000 * ext.middle, 0);
-                filterR.current.frequency.rampTo(2000 * ext.ring, 0);
-                filterP.current.frequency.rampTo(2000 * ext.pinky, 0);
+                filterT.current.frequency.rampTo(300 * ext.thumb, 0);
+                filterI.current.frequency.rampTo(350 * ext.index, 0);
+                filterM.current.frequency.rampTo(400 * ext.middle, 0);
+                filterR.current.frequency.rampTo(500 * ext.ring, 0);
+                filterP.current.frequency.rampTo(600 * ext.pinky, 0);
         
-                oscT.current.frequency.rampTo(1400 * ext.thumb, 0);
-                oscI.current.frequency.rampTo(1200 * ext.index, 0);
-                oscM.current.frequency.rampTo(1000 * ext.middle, 0);
-                oscR.current.frequency.rampTo(800 * ext.ring, 0);
-                oscP.current.frequency.rampTo(600 * ext.pinky, 0);
+                // oscT.current.frequency.rampTo(1400 * ext.thumb, 0);
+                // oscI.current.frequency.rampTo(1200 * ext.index, 0);
+                // oscM.current.frequency.rampTo(1000 * ext.middle, 0);
+                // oscR.current.frequency.rampTo(800 * ext.ring, 0);
+                // oscP.current.frequency.rampTo(600 * ext.pinky, 0);
         
                 
                 minT = Math.min(ext.thumb, minT);

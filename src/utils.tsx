@@ -27,6 +27,11 @@ export function clamp(n: number, min: number, max: number): number {
     return Math.max(Math.min(n, max), min);
 }
 
+export function scale(n: number, min: number, max: number, clamped: boolean): number {
+    let num = (n - min) / (max - min);
+    return clamped ? clamp(num, 0, 1) : num;
+}
+
 /**
  * Converts an angle from radians to degrees. 
  * @param angle Angle to convert.
