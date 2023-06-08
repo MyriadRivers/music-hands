@@ -1,10 +1,10 @@
 import * as Tone from 'tone';
 import { useRef, useEffect } from 'react';
 import {
-  HandLandmarker,
+  GestureRecognizer,  
   FilesetResolver,
-  HandLandmarkerResult,
-  NormalizedLandmark
+  NormalizedLandmark,
+  GestureRecognizerResult
 } from '@mediapipe/tasks-vision'
 
 import {
@@ -64,7 +64,7 @@ function getExtensions(handmarks: NormalizedLandmark[]): Extensions {
 }
 
 function App() {
-  const landmarker = useRef<HandLandmarker | null>(null);
+  const gestureRec = useRef<GestureRecognizer | null>(null);
   const video = useRef<HTMLVideoElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
 
@@ -84,7 +84,7 @@ function App() {
 
   useEffect(() => {
     async function initialize() {
-      await createLandmarker()
+      await createGestureRecognizer();
       await startWebCam();
       initSound();
 
@@ -92,17 +92,17 @@ function App() {
     initialize();
   }, []);
   
-  const createLandmarker = async () => {
+  const createGestureRecognizer = async () => {
     const vision = await FilesetResolver.forVisionTasks(
       "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
     );
-    landmarker.current = await HandLandmarker.createFromOptions(vision, {
+    gestureRec.current = await GestureRecognizer.createFromOptions(vision, {
       baseOptions: {
-        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+        modelAssetPath:
+          "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
         delegate: "GPU"
       },
-      runningMode: "VIDEO",
-      numHands: 2
+      runningMode: "VIDEO"
     });
   }
 
@@ -155,9 +155,9 @@ function App() {
     // If webcam supported, add event listener to button for when user
     // wants to activate it.
     if (hasGetUserMedia()) {
-      // set up webcam and hand landmarker
-      if (!landmarker) {
-        console.log("The hand landmarker is still loading...")
+      // set up webcam and gesture recognizer
+      if (!gestureRec.current) {
+        console.log("The model is still loading...")
         return;
       }
 
@@ -178,7 +178,7 @@ function App() {
     }
 
     let lastVideoTime = -1;
-    let results: HandLandmarkerResult;
+    let results: GestureRecognizerResult;
 
     let minT = 0.7;
     let minI = 0.7;
@@ -193,14 +193,13 @@ function App() {
     let maxP = 0.7;
 
     async function predictWebcam() {
-      
-      let startTimeMs = performance.now();
-      if (video.current && landmarker.current && canvas.current) {
+      let nowInMs = Date.now()
+      if (video.current && gestureRec.current && canvas.current) {
         if (lastVideoTime !== video.current.currentTime) {
           lastVideoTime = video.current.currentTime;
-          results = landmarker.current.detectForVideo(video.current, startTimeMs)
+          results = gestureRec.current.recognizeForVideo(video.current, nowInMs);
 
-          const sonify = (results: HandLandmarkerResult) => {
+          const sonify = (results: GestureRecognizerResult) => {
             if (oscT.current && oscI.current && oscM.current && oscR.current && oscP.current && 
               filterT.current && filterI.current && filterM.current && filterR.current && filterP.current && 
               gain.current) {
