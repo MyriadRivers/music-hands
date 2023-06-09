@@ -6,7 +6,7 @@ import { NormalizedLandmark } from "@mediapipe/tasks-vision";
  * @returns Original landmark converted to be in the new coordinate space.
  */
 function toSpace(u: NormalizedLandmark, v: NormalizedLandmark): NormalizedLandmark {
-    return {x: u.x - v.x, y: u.y - v.y, z: u.z - v.z};
+    return { x: u.x - v.x, y: u.y - v.y, z: u.z - v.z };
 }
 
 function dot(u: NormalizedLandmark, v: NormalizedLandmark): number {

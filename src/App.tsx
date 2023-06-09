@@ -1,13 +1,16 @@
 import * as Tone from 'tone';
 import { useRef, useEffect } from 'react';
 import {
-  GestureRecognizer,  
+  GestureRecognizer,
+  PoseLandmarker,
   FilesetResolver,
   NormalizedLandmark,
-  GestureRecognizerResult
+  GestureRecognizerResult,
+  PoseLandmarkerResult
 } from '@mediapipe/tasks-vision'
 
 import {
+  LandmarkConnectionArray,
   drawConnectors,
   drawLandmarks
 } from '@mediapipe/drawing_utils'
@@ -19,6 +22,8 @@ import {
 import { getAngle, scale, radToDeg } from './utils';
 
 import kickSample from "./resources/kick.wav"
+
+const POSE_CONNECT: LandmarkConnectionArray = PoseLandmarker.POSE_CONNECTIONS.map((connection) => [connection.start, connection.end]);
 
 type Extensions = {
   thumb: number;
@@ -72,6 +77,7 @@ function getExtensions(handmarks: NormalizedLandmark[]): Extensions {
 
 function App() {
   const gestureRec = useRef<GestureRecognizer | null>(null);
+  const poseLandmarker = useRef<PoseLandmarker | null>(null);
   const video = useRef<HTMLVideoElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
 
@@ -97,13 +103,14 @@ function App() {
   useEffect(() => {
     async function initialize() {
       await createGestureRecognizer();
+      await createPoseLandmarker();
       await startWebCam();
       initSound();
 
     }
     initialize();
   }, []);
-  
+
   const createGestureRecognizer = async () => {
     const vision = await FilesetResolver.forVisionTasks(
       "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
@@ -116,6 +123,20 @@ function App() {
       },
       runningMode: "VIDEO",
       numHands: 2
+    });
+  }
+
+  const createPoseLandmarker = async () => {
+    const vision = await FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+    );
+    poseLandmarker.current = await PoseLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`,
+        delegate: "GPU"
+      },
+      runningMode: "VIDEO",
+      numPoses: 2
     });
   }
 
@@ -155,14 +176,14 @@ function App() {
     filterM.current.connect(gain.current);
     filterR.current.connect(gain.current);
     filterP.current.connect(gain.current);
-    
+
     oscT.current.start();
     oscI.current.start();
     oscM.current.start();
     oscR.current.start();
     oscP.current.start();
   }
-  
+
   const startWebCam = async () => {
     // Check if webcam access is supported.
     const hasGetUserMedia = () => !!navigator.mediaDevices?.getUserMedia;
@@ -192,8 +213,11 @@ function App() {
       console.warn("getUserMedia() is not supported by your browser");
     }
 
+
+
     let lastVideoTime = -1;
-    let results: GestureRecognizerResult;
+    let handResults: GestureRecognizerResult;
+    let poseResults: PoseLandmarkerResult;
 
     let minT = 0.7;
     let minI = 0.7;
@@ -208,55 +232,58 @@ function App() {
     let maxP = 0.7;
 
     async function predictWebcam() {
-      let nowInMs = Date.now()
-      if (video.current && gestureRec.current && canvas.current) {
+      let startTimeMs = performance.now();
+      if (video.current && gestureRec.current && poseLandmarker.current && canvas.current) {
         if (lastVideoTime !== video.current.currentTime) {
           lastVideoTime = video.current.currentTime;
-          results = gestureRec.current.recognizeForVideo(video.current, nowInMs);
+
+          // Run the models on the current frame
+          handResults = gestureRec.current.recognizeForVideo(video.current, startTimeMs);
+          poseResults = poseLandmarker.current.detectForVideo(video.current, startTimeMs)
 
           const sonify = (results: GestureRecognizerResult) => {
-            if (oscT.current && oscI.current && oscM.current && oscR.current && oscP.current && 
-              filterT.current && filterI.current && filterM.current && filterR.current && filterP.current && 
+            if (oscT.current && oscI.current && oscM.current && oscR.current && oscP.current &&
+              filterT.current && filterI.current && filterM.current && filterR.current && filterP.current &&
               gain.current) {
-        
+
               // Only make sounds if hands are detected
-        
+
               if (results.gestures.length > 0) {
                 gain.current.gain.rampTo(1.0);
                 // Extensions Test
-        
+
                 let ext = getExtensions(results.landmarks[0])
-        
+
                 // filterT.current.frequency.rampTo(300 * ext.thumb, 0);
                 // filterI.current.frequency.rampTo(350 * ext.index, 0);
                 // filterM.current.frequency.rampTo(400 * ext.middle, 0);
                 // filterR.current.frequency.rampTo(500 * ext.ring, 0);
                 // filterP.current.frequency.rampTo(600 * ext.pinky, 0);
-                
+
                 minT = Math.min(ext.thumb, minT);
                 minI = Math.min(ext.index, minI);
                 minM = Math.min(ext.middle, minM);
                 minR = Math.min(ext.ring, minR);
                 minP = Math.min(ext.pinky, minP);
-        
+
                 maxT = Math.max(ext.thumb, maxT);
                 maxI = Math.max(ext.index, maxI);
                 maxM = Math.max(ext.middle, maxM);
                 maxR = Math.max(ext.ring, maxR);
                 maxP = Math.max(ext.pinky, maxP);
-        
+
                 // console.log(`minT: ${minT}\nminI: ${minI}\nminM: ${minM}\nminR: ${minR}\nminP: ${minP}\n`);
                 // console.log(`maxT: ${maxT}\nmaxI: ${maxI}\nmaxM: ${maxM}\nmaxR: ${maxR}\nmaxP: ${maxP}\n`);
 
-                
+
                 // TODO: Clean up the null checks of kick, etc., 
                 // and make it so the first hand that closes into a fist determines the kick, not the first detected
 
                 if (results.gestures.length > 1) {
-                  if (results.gestures[0][0].categoryName === "Open_Palm" 
-                  && results.gestures[1][0].categoryName === "Open_Palm"
-                  && mode.current !== Mode.Rhythm
-                  && kick.current) {
+                  if (results.gestures[0][0].categoryName === "Open_Palm"
+                    && results.gestures[1][0].categoryName === "Open_Palm"
+                    && mode.current !== Mode.Rhythm
+                    && kick.current) {
                     mode.current = Mode.Rhythm;
                     prevHands.current = results;
                     kick.current.start();
@@ -277,21 +304,21 @@ function App() {
                     prevHands.current = results;
                   }
                 }
-        
-        
-        
+
+
+
                 //TODO: Have some variables store the minimum and maximum extension perceived for each finger
                 // Move my hand in all ways possible
                 // Then clamp the extensions and scale them to those min and max, normalizing values to 0 and 1
                 // to make them easier to deal with
-        
+
               } else {
                 gain.current.gain.rampTo(0.0);
               }
             }
           }
 
-          sonify(results);
+          sonify(handResults);
 
         }
         canvas.current.width = video.current.videoWidth;
@@ -303,28 +330,36 @@ function App() {
           canvasCtx.save();
           canvasCtx.clearRect(0, 0, canvas.current.width, canvas.current.height);
 
-          if (results.landmarks) {
-            for (const landmarks of results.landmarks) {
+          if (handResults.landmarks && poseResults.landmarks) {
+            for (const landmarks of handResults.landmarks) {
               drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {
                 color: "#86cecb",
                 lineWidth: 5
               });
               drawLandmarks(canvasCtx, landmarks, { color: "#d12f4e", lineWidth: 2 });
             }
+
+            for (const landmark of poseResults.landmarks) {
+              drawLandmarks(canvasCtx, landmark, { color: "#000000", lineWidth: 2 });
+              drawConnectors(canvasCtx, landmark, POSE_CONNECT, {
+                color: "#ffffff",
+                lineWidth: 5
+              });
+            }
           }
           canvasCtx.restore();
         }
       }
-      
+
       window.requestAnimationFrame(predictWebcam);
     }
   }
 
   return (
     <div className="App">
-      <div id="liveView" style={{width: 500, height: 400, position: "relative"}}>
-        <video id="video" ref={video} style={{position: "absolute"}}></video>
-        <canvas id="output_canvas" ref={canvas} style={{position: "absolute", left: "0px", top: "0px"}}></canvas>
+      <div id="liveView" style={{ width: 500, height: 400, position: "relative" }}>
+        <video id="video" ref={video} style={{ position: "absolute" }}></video>
+        <canvas id="output_canvas" ref={canvas} style={{ position: "absolute", left: "0px", top: "0px" }}></canvas>
       </div>
     </div>
   );
