@@ -18,12 +18,19 @@ import {
 
 import { getAngle, scale, radToDeg } from './utils';
 
+import kickSample from "./resources/kick.wav"
+
 type Extensions = {
   thumb: number;
   index: number;
   middle: number;
   ring: number;
   pinky: number;
+}
+
+enum Mode {
+  Rhythm = "RHYTHM",
+  Melody = "MELODY"
 }
 
 function getExtensions(handmarks: NormalizedLandmark[]): Extensions {
@@ -68,6 +75,9 @@ function App() {
   const video = useRef<HTMLVideoElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
 
+  const kick = useRef<Tone.Player | null>(null);
+  const prevHands = useRef<GestureRecognizerResult | null>(null);
+
   const oscT = useRef<Tone.Oscillator | null>(null);
   const oscI = useRef<Tone.Oscillator | null>(null);
   const oscM = useRef<Tone.Oscillator | null>(null);
@@ -81,6 +91,8 @@ function App() {
   const filterP = useRef<Tone.Filter | null>(null);
 
   const gain = useRef<Tone.Gain | null>(null);
+
+  const mode = useRef<Mode>(Mode.Melody);
 
   useEffect(() => {
     async function initialize() {
@@ -102,11 +114,18 @@ function App() {
           "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
         delegate: "GPU"
       },
-      runningMode: "VIDEO"
+      runningMode: "VIDEO",
+      numHands: 2
     });
   }
 
   const initSound = () => {
+    gain.current = new Tone.Gain(0);
+    gain.current.toDestination();
+
+    kick.current = new Tone.Player(kickSample);
+    kick.current.connect(gain.current);
+
     oscT.current = new Tone.Oscillator("C4");
     oscI.current = new Tone.Oscillator("E4");
     oscM.current = new Tone.Oscillator("G4");
@@ -131,15 +150,11 @@ function App() {
     oscR.current.connect(filterR.current);
     oscP.current.connect(filterP.current);
 
-    gain.current = new Tone.Gain(0);
-
     filterT.current.connect(gain.current);
     filterI.current.connect(gain.current);
     filterM.current.connect(gain.current);
     filterR.current.connect(gain.current);
     filterP.current.connect(gain.current);
-
-    gain.current.toDestination();
     
     oscT.current.start();
     oscI.current.start();
@@ -206,32 +221,17 @@ function App() {
         
               // Only make sounds if hands are detected
         
-              if (results.handednesses.length > 0) {
+              if (results.gestures.length > 0) {
                 gain.current.gain.rampTo(1.0);
-                // HANDEDNESS TEST
-        
-                // if (results.handednesses[0][0].categoryName === "Right") {
-                //   osc.current.frequency.rampTo("C5", 0);
-                // } else if (results.handednesses[0][0].categoryName === "Left") {
-                //   osc.current.frequency.rampTo("C4", 0);
-                // }
-        
                 // Extensions Test
         
                 let ext = getExtensions(results.landmarks[0])
         
-                filterT.current.frequency.rampTo(300 * ext.thumb, 0);
-                filterI.current.frequency.rampTo(350 * ext.index, 0);
-                filterM.current.frequency.rampTo(400 * ext.middle, 0);
-                filterR.current.frequency.rampTo(500 * ext.ring, 0);
-                filterP.current.frequency.rampTo(600 * ext.pinky, 0);
-        
-                // oscT.current.frequency.rampTo(1400 * ext.thumb, 0);
-                // oscI.current.frequency.rampTo(1200 * ext.index, 0);
-                // oscM.current.frequency.rampTo(1000 * ext.middle, 0);
-                // oscR.current.frequency.rampTo(800 * ext.ring, 0);
-                // oscP.current.frequency.rampTo(600 * ext.pinky, 0);
-        
+                // filterT.current.frequency.rampTo(300 * ext.thumb, 0);
+                // filterI.current.frequency.rampTo(350 * ext.index, 0);
+                // filterM.current.frequency.rampTo(400 * ext.middle, 0);
+                // filterR.current.frequency.rampTo(500 * ext.ring, 0);
+                // filterP.current.frequency.rampTo(600 * ext.pinky, 0);
                 
                 minT = Math.min(ext.thumb, minT);
                 minI = Math.min(ext.index, minI);
@@ -245,8 +245,38 @@ function App() {
                 maxR = Math.max(ext.ring, maxR);
                 maxP = Math.max(ext.pinky, maxP);
         
-                console.log(`minT: ${minT}\nminI: ${minI}\nminM: ${minM}\nminR: ${minR}\nminP: ${minP}\n`);
-                console.log(`maxT: ${maxT}\nmaxI: ${maxI}\nmaxM: ${maxM}\nmaxR: ${maxR}\nmaxP: ${maxP}\n`);
+                // console.log(`minT: ${minT}\nminI: ${minI}\nminM: ${minM}\nminR: ${minR}\nminP: ${minP}\n`);
+                // console.log(`maxT: ${maxT}\nmaxI: ${maxI}\nmaxM: ${maxM}\nmaxR: ${maxR}\nmaxP: ${maxP}\n`);
+
+                
+                // TODO: Clean up the null checks of kick, etc., 
+                // and make it so the first hand that closes into a fist determines the kick, not the first detected
+
+                if (results.gestures.length > 1) {
+                  if (results.gestures[0][0].categoryName === "Open_Palm" 
+                  && results.gestures[1][0].categoryName === "Open_Palm"
+                  && mode.current !== Mode.Rhythm
+                  && kick.current) {
+                    mode.current = Mode.Rhythm;
+                    prevHands.current = results;
+                    kick.current.start();
+                  }
+                }
+
+                // Basic gesture triggered kicks
+
+                if (prevHands.current && kick.current) {
+                  let prevHand1 = prevHands.current.gestures[0][0].categoryName;
+                  let prevHand2 = prevHands.current.gestures[1][0].categoryName;
+
+                  let currHand1 = results.gestures[0][0].categoryName;
+                  let currHand2 = results.gestures[1][0].categoryName;
+
+                  if (currHand1 !== prevHand1 && (currHand1 === "Open_Palm" || currHand1 === "Closed_Fist")) {
+                    kick.current.start();
+                    prevHands.current = results;
+                  }
+                }
         
         
         
