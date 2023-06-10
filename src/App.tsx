@@ -156,8 +156,17 @@ function getScaledExtension(ext: Extensions, hand: Handedness): Extensions {
 }
 
 function App() {
+  // TODO: Consider refactoring these so instead of useRef they're just outside the function as normal variables
+  // The "App()" componenent should be stand alone though, so I suppose maybe all those normal variables should be in the component instead of the other way around?
+
+  // TODO: Maybe consider refactoring to split between first and second hands instead of right and left to make it handedness-agnostic
+  // On second thought, might not work because the live tracking of min and max would get screwed up if it kept switching hands
+
+  // Models
   const gestureRec = useRef<GestureRecognizer | null>(null);
   const poseLandmarker = useRef<PoseLandmarker | null>(null);
+
+  // UI
   const video = useRef<HTMLVideoElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
 
@@ -183,6 +192,11 @@ function App() {
 
   // Config
   const mode = useRef<Mode>(Mode.MELODY);
+
+  const ext1 = useRef<Extensions | null>(null);
+  const ext2 = useRef<Extensions | null>(null);
+
+  const counts = useRef<Array<boolean>>([false, false, false, false]);
 
   useEffect(() => {
     async function initialize() {
@@ -315,33 +329,32 @@ function App() {
           handResults = gestureRec.current.recognizeForVideo(video.current, startTimeMs);
           poseResults = poseLandmarker.current.detectForVideo(video.current, startTimeMs)
 
-          const sonify = (results: GestureRecognizerResult) => {
+          const sonify = (handResults: GestureRecognizerResult, poseResults: PoseLandmarkerResult) => {
             if (oscT.current && oscI.current && oscM.current && oscR.current && oscP.current &&
               filterT.current && filterI.current && filterM.current && filterR.current && filterP.current &&
               gain.current) {
 
               // Only make sounds if hands are detected
 
-              if (results.gestures.length > 0) {
+              if (handResults.gestures.length > 0) {
                 gain.current.gain.rampTo(1.0);
 
-                // Get absolute extensions for both hands
+                // Derive parameters from the prediction results
 
                 let extR: Extensions | null = null;
                 let extL: Extensions | null = null;
 
-                if (results.handednesses[0][0].categoryName === "Right") {
-                  extR = getFingerExtensions(results.landmarks[0]);
-                  //console.log(extR);
-                } else if (results.handednesses[0][0].categoryName === "Left") {
-                  extL = getFingerExtensions(results.landmarks[0]);
+                if (handResults.handednesses[0][0].categoryName === "Right") {
+                  extR = getFingerExtensions(handResults.landmarks[0]);
+                } else if (handResults.handednesses[0][0].categoryName === "Left") {
+                  extL = getFingerExtensions(handResults.landmarks[0]);
                 }
 
-                if (results.handednesses.length > 1) {
-                  if (results.handednesses[1][0].categoryName === "Right") {
-                    extR = getFingerExtensions(results.landmarks[1]);
-                  } else if (results.handednesses[1][0].categoryName === "Left") {
-                    extL = getFingerExtensions(results.landmarks[1]);
+                if (handResults.handednesses.length > 1) {
+                  if (handResults.handednesses[1][0].categoryName === "Right") {
+                    extR = getFingerExtensions(handResults.landmarks[1]);
+                  } else if (handResults.handednesses[1][0].categoryName === "Left") {
+                    extL = getFingerExtensions(handResults.landmarks[1]);
                   }
                 }
 
@@ -352,9 +365,32 @@ function App() {
                 if (extR) scaledExtR = getScaledExtension(extR, Handedness.RIGHT);
                 if (extL) scaledExtL = getScaledExtension(extL, Handedness.LEFT);
 
+                // React to gestures
+                if (handResults.gestures[0][0].categoryName === "Closed_Fist" && mode.current !== Mode.RHYTHM) {
+                  mode.current = Mode.RHYTHM;
+                }
 
-                // TODO: Clean up the null checks of kick, etc., 
-                // and make it so the first hand that closes into a fist determines the kick, not the first detected
+                if (mode.current === Mode.RHYTHM) {
+                  ext1.current = handResults.handednesses[0][0].categoryName === "Right" ? scaledExtR : scaledExtL;
+                  if (ext1.current) {
+                    if (ext1.current.index > 0.95 && !counts.current[0]) {
+                      console.log("1 at " + performance.now());
+                      counts.current[0] = true;
+                    }
+                    if (ext1.current.middle > 0.95 && !counts.current[1]) {
+                      console.log("2 at " + performance.now());
+                      counts.current[1] = true;
+                    }
+                    if (ext1.current.ring > 0.95 && !counts.current[2]) {
+                      console.log("3 at " + performance.now());
+                      counts.current[2] = true;
+                    }
+                    if (ext1.current.pinky > 0.95 && !counts.current[3]) {
+                      console.log("4 at " + performance.now());
+                      counts.current[3] = true;
+                    }
+                  }
+                }
 
               } else {
                 gain.current.gain.rampTo(0.0);
@@ -362,7 +398,7 @@ function App() {
             }
           }
 
-          sonify(handResults);
+          sonify(handResults, poseResults);
 
         }
         canvas.current.width = video.current.videoWidth;
