@@ -19,9 +19,10 @@ import {
   HAND_CONNECTIONS
 } from '@mediapipe/hands'
 
-import { getAngle, scale, radToDeg } from './utils';
+import { getAngle, scale, radToDeg, clamp } from './utils';
 
 import kickSample from "./resources/kick.wav"
+import snareSample from "./resources/snare.wav"
 
 const POSE_CONNECT: LandmarkConnectionArray = PoseLandmarker.POSE_CONNECTIONS.map((connection) => [connection.start, connection.end]);
 
@@ -34,11 +35,48 @@ type Extensions = {
 }
 
 enum Mode {
-  Rhythm = "RHYTHM",
-  Melody = "MELODY"
+  RHYTHM = "RHYTHM",
+  MELODY = "MELODY"
 }
 
-function getExtensions(handmarks: NormalizedLandmark[]): Extensions {
+enum Handedness {
+  RIGHT = "RIGHT",
+  LEFT = "LEFT"
+}
+
+var extMinR: Extensions = {
+  thumb: 0.7,
+  index: 0.7,
+  middle: 0.7,
+  ring: 0.7,
+  pinky: 0.7
+}
+
+var extMinL: Extensions = {
+  thumb: 0.7,
+  index: 0.7,
+  middle: 0.7,
+  ring: 0.7,
+  pinky: 0.7
+}
+
+var extMaxR: Extensions = {
+  thumb: 0.7,
+  index: 0.7,
+  middle: 0.7,
+  ring: 0.7,
+  pinky: 0.7
+}
+
+var extMaxL: Extensions = {
+  thumb: 0.7,
+  index: 0.7,
+  middle: 0.7,
+  ring: 0.7,
+  pinky: 0.7
+};
+
+function getFingerExtensions(handmarks: NormalizedLandmark[]): Extensions {
   let angleThumbMCP = radToDeg(getAngle(handmarks[1], handmarks[2], handmarks[3]));
   let angleThumbIP = radToDeg(getAngle(handmarks[2], handmarks[3], handmarks[4]));
 
@@ -58,13 +96,11 @@ function getExtensions(handmarks: NormalizedLandmark[]): Extensions {
   let anglePinkyPIP = radToDeg(getAngle(handmarks[17], handmarks[18], handmarks[19]));
   let anglePinkyDIP = radToDeg(getAngle(handmarks[18], handmarks[19], handmarks[20]));
 
-  // TODO: Replace scale min and max with detected min and max extension from user
-  // Right now they use hard coded values aligned with my own testing
-  let thumb = scale((angleThumbMCP + angleThumbIP) / (180 * 2), 0.65, 0.965, true);
-  let index = scale((angleIndexMCP + angleIndexPIP + angleIndexDIP) / (180 * 3), 0.64, 0.975, true);
-  let middle = scale((angleMiddleMCP + angleMiddlePIP + angleMiddleDIP) / (180 * 3), 0.55, 0.975, true);
-  let ring = scale((angleRingMCP + angleRingPIP + angleRingDIP) / (180 * 3), 0.52, 0.975, true);
-  let pinky = scale((anglePinkyMCP + anglePinkyPIP + anglePinkyDIP) / (180 * 3), 0.50, 0.975, true);
+  let thumb = clamp((angleThumbMCP + angleThumbIP) / (180 * 2), 0, 1);
+  let index = clamp((angleIndexMCP + angleIndexPIP + angleIndexDIP) / (180 * 3), 0, 1);
+  let middle = clamp((angleMiddleMCP + angleMiddlePIP + angleMiddleDIP) / (180 * 3), 0, 1);
+  let ring = clamp((angleRingMCP + angleRingPIP + angleRingDIP) / (180 * 3), 0, 1);
+  let pinky = clamp((anglePinkyMCP + anglePinkyPIP + anglePinkyDIP) / (180 * 3), 0, 1);
 
   return {
     thumb: thumb,
@@ -75,21 +111,68 @@ function getExtensions(handmarks: NormalizedLandmark[]): Extensions {
   }
 }
 
+function updateExtensionBoundaries(currExtR: Extensions | null, currExtL: Extensions | null) {
+  if (currExtR) {
+    extMinR.thumb = Math.min(extMinR.thumb, currExtR.thumb);
+    extMinR.index = Math.min(extMinR.index, currExtR.index);
+    extMinR.middle = Math.min(extMinR.middle, currExtR.middle);
+    extMinR.ring = Math.min(extMinR.ring, currExtR.ring);
+    extMinR.pinky = Math.min(extMinR.pinky, currExtR.pinky);
+
+    extMaxR.thumb = Math.max(extMaxR.thumb, currExtR.thumb);
+    extMaxR.index = Math.max(extMaxR.index, currExtR.index);
+    extMaxR.middle = Math.max(extMaxR.middle, currExtR.middle);
+    extMaxR.ring = Math.max(extMaxR.ring, currExtR.ring);
+    extMaxR.pinky = Math.max(extMaxR.pinky, currExtR.pinky);
+  }
+  if (currExtL) {
+    extMinL.thumb = Math.min(extMinL.thumb, currExtL.thumb);
+    extMinL.index = Math.min(extMinL.index, currExtL.index);
+    extMinL.middle = Math.min(extMinL.middle, currExtL.middle);
+    extMinL.ring = Math.min(extMinL.ring, currExtL.ring);
+    extMinL.pinky = Math.min(extMinL.pinky, currExtL.pinky);
+
+    extMaxL.thumb = Math.max(extMaxL.thumb, currExtL.thumb);
+    extMaxL.index = Math.max(extMaxL.index, currExtL.index);
+    extMaxL.middle = Math.max(extMaxL.middle, currExtL.middle);
+    extMaxL.ring = Math.max(extMaxL.ring, currExtL.ring);
+    extMaxL.pinky = Math.max(extMaxL.pinky, currExtL.pinky);
+  }
+}
+
+function getScaledExtension(ext: Extensions, hand: Handedness): Extensions {
+  let extMin = hand === Handedness.RIGHT ? extMinR : extMinL;
+  let extMax = hand === Handedness.RIGHT ? extMaxR : extMaxL;
+
+  let scaledExt = {
+    thumb: scale(ext.thumb, extMin.thumb, extMax.thumb, true),
+    index: scale(ext.index, extMin.index, extMax.index, true),
+    middle: scale(ext.middle, extMin.middle, extMax.middle, true),
+    ring: scale(ext.ring, extMin.ring, extMax.ring, true),
+    pinky: scale(ext.pinky, extMin.pinky, extMax.pinky, true),
+  }
+
+  return scaledExt;
+}
+
 function App() {
   const gestureRec = useRef<GestureRecognizer | null>(null);
   const poseLandmarker = useRef<PoseLandmarker | null>(null);
   const video = useRef<HTMLVideoElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
 
+  // Samples
   const kick = useRef<Tone.Player | null>(null);
-  const prevHands = useRef<GestureRecognizerResult | null>(null);
+  const snare = useRef<Tone.Player | null>(null);
 
+  // Instruments
   const oscT = useRef<Tone.Oscillator | null>(null);
   const oscI = useRef<Tone.Oscillator | null>(null);
   const oscM = useRef<Tone.Oscillator | null>(null);
   const oscR = useRef<Tone.Oscillator | null>(null);
   const oscP = useRef<Tone.Oscillator | null>(null);
 
+  // Effects
   const filterT = useRef<Tone.Filter | null>(null);
   const filterI = useRef<Tone.Filter | null>(null);
   const filterM = useRef<Tone.Filter | null>(null);
@@ -98,7 +181,8 @@ function App() {
 
   const gain = useRef<Tone.Gain | null>(null);
 
-  const mode = useRef<Mode>(Mode.Melody);
+  // Config
+  const mode = useRef<Mode>(Mode.MELODY);
 
   useEffect(() => {
     async function initialize() {
@@ -146,6 +230,9 @@ function App() {
 
     kick.current = new Tone.Player(kickSample);
     kick.current.connect(gain.current);
+
+    snare.current = new Tone.Player(snareSample);
+    snare.current.connect(gain.current);
 
     oscT.current = new Tone.Oscillator("C4");
     oscI.current = new Tone.Oscillator("E4");
@@ -214,22 +301,9 @@ function App() {
     }
 
 
-
     let lastVideoTime = -1;
     let handResults: GestureRecognizerResult;
     let poseResults: PoseLandmarkerResult;
-
-    let minT = 0.7;
-    let minI = 0.7;
-    let minM = 0.7;
-    let minR = 0.7;
-    let minP = 0.7;
-
-    let maxT = 0.7;
-    let maxI = 0.7;
-    let maxM = 0.7;
-    let maxR = 0.7;
-    let maxP = 0.7;
 
     async function predictWebcam() {
       let startTimeMs = performance.now();
@@ -250,67 +324,37 @@ function App() {
 
               if (results.gestures.length > 0) {
                 gain.current.gain.rampTo(1.0);
-                // Extensions Test
 
-                let ext = getExtensions(results.landmarks[0])
+                // Get absolute extensions for both hands
 
-                // filterT.current.frequency.rampTo(300 * ext.thumb, 0);
-                // filterI.current.frequency.rampTo(350 * ext.index, 0);
-                // filterM.current.frequency.rampTo(400 * ext.middle, 0);
-                // filterR.current.frequency.rampTo(500 * ext.ring, 0);
-                // filterP.current.frequency.rampTo(600 * ext.pinky, 0);
+                let extR: Extensions | null = null;
+                let extL: Extensions | null = null;
 
-                minT = Math.min(ext.thumb, minT);
-                minI = Math.min(ext.index, minI);
-                minM = Math.min(ext.middle, minM);
-                minR = Math.min(ext.ring, minR);
-                minP = Math.min(ext.pinky, minP);
+                if (results.handednesses[0][0].categoryName === "Right") {
+                  extR = getFingerExtensions(results.landmarks[0]);
+                  //console.log(extR);
+                } else if (results.handednesses[0][0].categoryName === "Left") {
+                  extL = getFingerExtensions(results.landmarks[0]);
+                }
 
-                maxT = Math.max(ext.thumb, maxT);
-                maxI = Math.max(ext.index, maxI);
-                maxM = Math.max(ext.middle, maxM);
-                maxR = Math.max(ext.ring, maxR);
-                maxP = Math.max(ext.pinky, maxP);
+                if (results.handednesses.length > 1) {
+                  if (results.handednesses[1][0].categoryName === "Right") {
+                    extR = getFingerExtensions(results.landmarks[1]);
+                  } else if (results.handednesses[1][0].categoryName === "Left") {
+                    extL = getFingerExtensions(results.landmarks[1]);
+                  }
+                }
 
-                // console.log(`minT: ${minT}\nminI: ${minI}\nminM: ${minM}\nminR: ${minR}\nminP: ${minP}\n`);
-                // console.log(`maxT: ${maxT}\nmaxI: ${maxI}\nmaxM: ${maxM}\nmaxR: ${maxR}\nmaxP: ${maxP}\n`);
+                updateExtensionBoundaries(extR, extL);
+
+                let scaledExtR = extR;
+                let scaledExtL = extL;
+                if (extR) scaledExtR = getScaledExtension(extR, Handedness.RIGHT);
+                if (extL) scaledExtL = getScaledExtension(extL, Handedness.LEFT);
 
 
                 // TODO: Clean up the null checks of kick, etc., 
                 // and make it so the first hand that closes into a fist determines the kick, not the first detected
-
-                if (results.gestures.length > 1) {
-                  if (results.gestures[0][0].categoryName === "Open_Palm"
-                    && results.gestures[1][0].categoryName === "Open_Palm"
-                    && mode.current !== Mode.Rhythm
-                    && kick.current) {
-                    mode.current = Mode.Rhythm;
-                    prevHands.current = results;
-                    kick.current.start();
-                  }
-                }
-
-                // Basic gesture triggered kicks
-
-                if (prevHands.current && kick.current) {
-                  let prevHand1 = prevHands.current.gestures[0][0].categoryName;
-                  let prevHand2 = prevHands.current.gestures[1][0].categoryName;
-
-                  let currHand1 = results.gestures[0][0].categoryName;
-                  let currHand2 = results.gestures[1][0].categoryName;
-
-                  if (currHand1 !== prevHand1 && (currHand1 === "Open_Palm" || currHand1 === "Closed_Fist")) {
-                    kick.current.start();
-                    prevHands.current = results;
-                  }
-                }
-
-
-
-                //TODO: Have some variables store the minimum and maximum extension perceived for each finger
-                // Move my hand in all ways possible
-                // Then clamp the extensions and scale them to those min and max, normalizing values to 0 and 1
-                // to make them easier to deal with
 
               } else {
                 gain.current.gain.rampTo(0.0);
