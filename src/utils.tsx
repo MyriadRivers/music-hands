@@ -32,6 +32,21 @@ export function scale(n: number, min: number, max: number, clamped: boolean): nu
     return clamped ? clamp(num, 0, 1) : num;
 }
 
+export function getTimeSig(n: number): number {
+    // Time signature will be the largest prime factor >= 3
+    // Or else, the number itself
+    let i = 3;
+    if (i > n) return n;
+    while (i <= n) {
+        if (n % i === 0) {
+            n /= i;
+        } else {
+            i++;
+        }
+    }
+    return i;
+}
+
 /**
  * Converts an angle from radians to degrees. 
  * @param angle Angle to convert.

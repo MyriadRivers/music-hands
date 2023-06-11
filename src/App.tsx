@@ -19,7 +19,7 @@ import {
   HAND_CONNECTIONS
 } from '@mediapipe/hands'
 
-import { getAngle, scale, radToDeg, clamp } from './utils';
+import { getAngle, scale, radToDeg, clamp, getTimeSig } from './utils';
 
 import kickSample from "./resources/kick.wav"
 import snareSample from "./resources/snare.wav"
@@ -190,13 +190,16 @@ function App() {
 
   const gain = useRef<Tone.Gain | null>(null);
 
-  // Config
+  // CONFIG
   const mode = useRef<Mode>(Mode.MELODY);
+  const rhythmModeDone = useRef<boolean>(false);
 
   const ext1 = useRef<Extensions | null>(null);
   const ext2 = useRef<Extensions | null>(null);
 
+  // Setting the BPM
   const counts = useRef<Array<boolean>>([false, false, false, false]);
+  const countArray = useRef<Array<number>>([]);
 
   useEffect(() => {
     async function initialize() {
@@ -208,6 +211,24 @@ function App() {
     }
     initialize();
   }, []);
+
+  const setBpm = () => {
+    if (countArray.current.length > 0) {
+      let difSum = 0;
+      let prevTime = countArray.current[0];
+      for (let i = 1; i < countArray.current.length; i++) {
+        let dif = countArray.current[i] - prevTime;
+        difSum += dif;
+        prevTime = countArray.current[i]
+      }
+
+      let mspb = difSum / (countArray.current.length - 1)
+
+      Tone.Transport.bpm.value = (1 / mspb) * 1000 * 60;
+      Tone.Transport.timeSignature = getTimeSig(countArray.current.length);
+      console.log("Setting bpm to: " + ((1 / mspb) * 1000 * 60) + "\nSetting time signature to: " + getTimeSig(countArray.current.length));
+    }
+  }
 
   const createGestureRecognizer = async () => {
     const vision = await FilesetResolver.forVisionTasks(
@@ -314,6 +335,7 @@ function App() {
       console.warn("getUserMedia() is not supported by your browser");
     }
 
+    let kicker = new Tone.Player(kickSample);
 
     let lastVideoTime = -1;
     let handResults: GestureRecognizerResult;
@@ -370,30 +392,60 @@ function App() {
                   mode.current = Mode.RHYTHM;
                 }
 
-                if (mode.current === Mode.RHYTHM) {
+                if (mode.current === Mode.RHYTHM && kick.current && snare.current && !rhythmModeDone.current) {
                   ext1.current = handResults.handednesses[0][0].categoryName === "Right" ? scaledExtR : scaledExtL;
                   if (ext1.current) {
-                    if (ext1.current.index > 0.95 && !counts.current[0]) {
+                    // Count fingers for bpm calculation based on their extensions
+                    if (ext1.current.index > 0.85 && !counts.current[0]) {
                       console.log("1 at " + performance.now());
+                      kick.current.start()
                       counts.current[0] = true;
+                      countArray.current.push(performance.now());
                     }
-                    if (ext1.current.middle > 0.95 && !counts.current[1]) {
+                    if (ext1.current.middle > 0.85 && !counts.current[1]) {
                       console.log("2 at " + performance.now());
+                      kick.current.start()
                       counts.current[1] = true;
+                      countArray.current.push(performance.now());
                     }
-                    if (ext1.current.ring > 0.95 && !counts.current[2]) {
+                    if (ext1.current.ring > 0.85 && !counts.current[2]) {
                       console.log("3 at " + performance.now());
+                      kick.current.start()
                       counts.current[2] = true;
+                      countArray.current.push(performance.now());
                     }
-                    if (ext1.current.pinky > 0.95 && !counts.current[3]) {
+                    if (ext1.current.pinky > 0.85 && !counts.current[3]) {
                       console.log("4 at " + performance.now());
+                      kick.current.start()
                       counts.current[3] = true;
+                      countArray.current.push(performance.now());
                     }
+                    // Reset fingers if they go down, letting you continue the count past 4
+                    if (ext1.current.index < 0.25 && counts.current[0]) {
+                      counts.current[0] = false;
+                    }
+                    if (ext1.current.middle < 0.25 && counts.current[1]) {
+                      counts.current[1] = false;
+                    }
+                    if (ext1.current.ring < 0.25 && counts.current[2]) {
+                      counts.current[2] = false;
+                    }
+                    if (ext1.current.pinky < 0.25 && counts.current[3]) {
+                      counts.current[3] = false;
+                    }
+                  }
+
+                  if (mode.current === Mode.RHYTHM && handResults.gestures[0][0].categoryName === "Closed_Fist" && countArray.current.length > 1) {
+                    mode.current = Mode.MELODY;
+                    rhythmModeDone.current = true;
+                    console.log("Kick it!")
+                    setBpm();
+                    startBeat();
                   }
                 }
 
               } else {
-                gain.current.gain.rampTo(0.0);
+                // gain.current.gain.rampTo(0.0);
               }
             }
           }
@@ -433,6 +485,23 @@ function App() {
 
       window.requestAnimationFrame(predictWebcam);
     }
+  }
+
+  const startBeat = () => {
+    Tone.Transport.scheduleRepeat((time) => {
+      kick.current?.start(time);
+      oscI.current?.start(time).stop(time + 0.1);
+    }, "4n");
+    if (Tone.Transport.timeSignature === 4) {
+      Tone.Transport.scheduleRepeat((time) => {
+        snare.current?.start(time);
+      }, "2n", "4n");
+    } else {
+      Tone.Transport.scheduleRepeat((time) => {
+        snare.current?.start(time);
+      }, "2m", "1m");
+    }
+    Tone.Transport.start();
   }
 
   return (
