@@ -23,6 +23,10 @@ import { getAngle, scale, radToDeg, clamp, getTimeSig } from './utils';
 
 import kickSample from "./resources/kick.wav"
 import snareSample from "./resources/snare.wav"
+import hatOpenSample from "./resources/hihatOpen.wav"
+import hatClosedSample from "./resources/hihatClosed.wav"
+import shakeOpenSample from "./resources/shakerOpen.wav"
+import shakeClosedSample from "./resources/shakerClosed.wav"
 
 const POSE_CONNECT: LandmarkConnectionArray = PoseLandmarker.POSE_CONNECTIONS.map((connection) => [connection.start, connection.end]);
 
@@ -174,6 +178,11 @@ function App() {
   const kick = useRef<Tone.Player | null>(null);
   const snare = useRef<Tone.Player | null>(null);
 
+  const hatOpen = useRef<Tone.Player | null>(null);
+  const hatClosed = useRef<Tone.Player | null>(null);
+  const shakeOpen = useRef<Tone.Player | null>(null);
+  const shakeClosed = useRef<Tone.Player | null>(null);
+
   // Instruments
   const oscT = useRef<Tone.Oscillator | null>(null);
   const oscI = useRef<Tone.Oscillator | null>(null);
@@ -188,7 +197,10 @@ function App() {
   const filterR = useRef<Tone.Filter | null>(null);
   const filterP = useRef<Tone.Filter | null>(null);
 
-  const gain = useRef<Tone.Gain | null>(null);
+  const panR = useRef<Tone.Panner | null>(null);
+  const panL = useRef<Tone.Panner | null>(null);
+
+  const masterGain = useRef<Tone.Gain | null>(null);
 
   // CONFIG
   const mode = useRef<Mode>(Mode.MELODY);
@@ -260,14 +272,26 @@ function App() {
   }
 
   const initSound = () => {
-    gain.current = new Tone.Gain(0);
-    gain.current.toDestination();
+    masterGain.current = new Tone.Gain(0);
+    masterGain.current.toDestination();
+
+    panL.current = new Tone.Panner(-1);
+    panL.current.connect(masterGain.current);
+    panR.current = new Tone.Panner(1);
+    panR.current.connect(masterGain.current);
 
     kick.current = new Tone.Player(kickSample);
-    kick.current.connect(gain.current);
+    kick.current.connect(masterGain.current);
 
     snare.current = new Tone.Player(snareSample);
-    snare.current.connect(gain.current);
+    snare.current.connect(masterGain.current);
+
+    hatOpen.current = new Tone.Player(hatOpenSample).connect(panR.current);
+    hatOpen.current.volume.value = -9;
+    hatClosed.current = new Tone.Player(hatClosedSample).connect(panR.current);
+
+    shakeOpen.current = new Tone.Player(shakeOpenSample).connect(panL.current);
+    shakeClosed.current = new Tone.Player(shakeClosedSample).connect(panL.current);
 
     oscT.current = new Tone.Oscillator("C4");
     oscI.current = new Tone.Oscillator("E4");
@@ -293,11 +317,11 @@ function App() {
     oscR.current.connect(filterR.current);
     oscP.current.connect(filterP.current);
 
-    filterT.current.connect(gain.current);
-    filterI.current.connect(gain.current);
-    filterM.current.connect(gain.current);
-    filterR.current.connect(gain.current);
-    filterP.current.connect(gain.current);
+    filterT.current.connect(masterGain.current);
+    filterI.current.connect(masterGain.current);
+    filterM.current.connect(masterGain.current);
+    filterR.current.connect(masterGain.current);
+    filterP.current.connect(masterGain.current);
 
     oscT.current.start();
     oscI.current.start();
@@ -335,8 +359,6 @@ function App() {
       console.warn("getUserMedia() is not supported by your browser");
     }
 
-    let kicker = new Tone.Player(kickSample);
-
     let lastVideoTime = -1;
     let handResults: GestureRecognizerResult;
     let poseResults: PoseLandmarkerResult;
@@ -354,12 +376,12 @@ function App() {
           const sonify = (handResults: GestureRecognizerResult, poseResults: PoseLandmarkerResult) => {
             if (oscT.current && oscI.current && oscM.current && oscR.current && oscP.current &&
               filterT.current && filterI.current && filterM.current && filterR.current && filterP.current &&
-              gain.current) {
+              masterGain.current) {
 
               // Only make sounds if hands are detected
 
               if (handResults.gestures.length > 0) {
-                gain.current.gain.rampTo(1.0);
+                masterGain.current.gain.rampTo(1.0);
 
                 // Derive parameters from the prediction results
 
@@ -490,12 +512,19 @@ function App() {
   const startBeat = () => {
     Tone.Transport.scheduleRepeat((time) => {
       kick.current?.start(time);
-      oscI.current?.start(time).stop(time + 0.1);
     }, "4n");
+    Tone.Transport.scheduleRepeat((time) => {
+      hatClosed.current?.start(time);
+      shakeClosed.current?.start(time);
+    }, "16n");
     if (Tone.Transport.timeSignature === 4) {
       Tone.Transport.scheduleRepeat((time) => {
         snare.current?.start(time);
       }, "2n", "4n");
+      Tone.Transport.scheduleRepeat((time) => {
+        hatOpen.current?.start(time, undefined, "16n");
+        shakeOpen.current?.start(time, undefined, "16n");
+      }, "4n", "8n");
     } else {
       Tone.Transport.scheduleRepeat((time) => {
         snare.current?.start(time);
